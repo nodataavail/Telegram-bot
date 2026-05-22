@@ -1,0 +1,4 @@
+pyTelegramBotAPI==4.20.0
+langdetect==1.0.9
+requests==2.31.0
+gigachat==0.1.0
