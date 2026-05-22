@@ -10,15 +10,18 @@ from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from langdetect import detect, DetectorFactory
 from gigachat import GigaChat
 import requests
+from flask import Flask, request
 
 DetectorFactory.seed = 0
 
-# ========== НАСТРОЙКИ (из переменных окружения Railway) ==========
+# ========== НАСТРОЙКИ ==========
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GIGACHAT_CREDENTIALS = os.environ.get("GIGACHAT_CREDENTIALS")
 SAPLING_API_KEY = os.environ.get("SAPLING_API_KEY")
 DEMO_PASSWORD = "peter2026"
 SAPLING_URL = "https://api.sapling.ai/api/v1/aidetect"
+
+PORT = int(os.environ.get("PORT", 8080))
 
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -226,8 +229,29 @@ def handle_any_message(message):
             reply_markup=get_start_keyboard()
         )
 
-# ========== ЗАПУСК ==========
+# ========== WEBHOOK + ПОЛЛИНГ (гибридный режим) ==========
+app = Flask(__name__)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return 'OK', 200
+    return 'Bad Request', 400
+
+@app.route('/')
+def index():
+    return 'Bot is running!', 200
+
 if __name__ == "__main__":
-    print("✅ Бот запущен!")
-    print("🔐 Пароль: peter2026")
-    bot.infinity_polling()
+    # Устанавливаем webhook
+    webhook_url = f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'localhost')}/webhook"
+    bot.remove_webhook()
+    bot.set_webhook(url=webhook_url)
+    print(f"✅ Webhook установлен: {webhook_url}")
+    print("🚀 Бот запущен в webhook-режиме")
+    
+    # Запускаем Flask-сервер
+    app.run(host='0.0.0.0', port=PORT)
