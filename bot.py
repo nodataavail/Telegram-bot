@@ -8,24 +8,41 @@ import json
 import telebot
 from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from langdetect import detect, DetectorFactory
-from gigachat import GigaChat
 import requests
-from flask import Flask, request
+
+# Альтернативный импорт для GigaChat
+try:
+    from gigachat import GigaChat
+    print("✅ GigaChat импортирован стандартно")
+except ImportError:
+    # Если стандартный импорт не работает
+    import gigachat
+    GigaChat = gigachat.GigaChat
+    print("✅ GigaChat импортирован через fallback")
 
 DetectorFactory.seed = 0
 
-# ========== НАСТРОЙКИ ==========
+# ========== НАСТРОЙКИ (из переменных окружения Railway) ==========
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GIGACHAT_CREDENTIALS = os.environ.get("GIGACHAT_CREDENTIALS")
 SAPLING_API_KEY = os.environ.get("SAPLING_API_KEY")
 DEMO_PASSWORD = "peter2026"
 SAPLING_URL = "https://api.sapling.ai/api/v1/aidetect"
 
-PORT = int(os.environ.get("PORT", 8080))
-
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-giga = GigaChat(credentials=GIGACHAT_CREDENTIALS, verify_ssl_certs=False)
+
+# Инициализация GigaChat с обработкой ошибок
+try:
+    giga = GigaChat(
+        credentials=GIGACHAT_CREDENTIALS,
+        verify_ssl_certs=False,
+        scope="GIGACHAT_API_PERS"
+    )
+    print("✅ GigaChat инициализирован")
+except Exception as e:
+    print(f"⚠️ Ошибка инициализации GigaChat: {e}")
+    giga = None
 
 authorized_users = set()
 user_language = {}
@@ -93,6 +110,8 @@ def remove_kb():
 
 # ========== ОСНОВНЫЕ ФУНКЦИИ ==========
 def check_russian(text):
+    if giga is None:
+        return {"is_ai": False, "confidence": 50, "explanation": "GigaChat временно недоступен"}, None
     try:
         prompt = f"Ты детектор ИИ. Ответь JSON: {{'is_ai': true/false, 'confidence': 0-100, 'explanation': 'объяснение'}}. Текст: {text[:1000]}"
         resp = giga.chat(prompt)
@@ -229,29 +248,9 @@ def handle_any_message(message):
             reply_markup=get_start_keyboard()
         )
 
-# ========== WEBHOOK + ПОЛЛИНГ (гибридный режим) ==========
-app = Flask(__name__)
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return 'OK', 200
-    return 'Bad Request', 400
-
-@app.route('/')
-def index():
-    return 'Bot is running!', 200
-
+# ========== ЗАПУСК ==========
 if __name__ == "__main__":
-    # Устанавливаем webhook
-    webhook_url = f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'localhost')}/webhook"
-    bot.remove_webhook()
-    bot.set_webhook(url=webhook_url)
-    print(f"✅ Webhook установлен: {webhook_url}")
-    print("🚀 Бот запущен в webhook-режиме")
-    
-    # Запускаем Flask-сервер
-    app.run(host='0.0.0.0', port=PORT)
+    print("✅ Бот запущен!")
+    print("🔐 Пароль: peter2026")
+    print("🤖 GigaChat статус:", "Доступен" if giga else "Недоступен")
+    bot.infinity_polling()
